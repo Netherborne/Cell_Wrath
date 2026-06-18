@@ -277,6 +277,7 @@ function Cell.CreateTitledPane(parent, text, width, height, color)
     if not color then color = {["r"]=accentColor.t[1], ["g"]=accentColor.t[2], ["b"]=accentColor.t[3], ["a"]=0.777, ["s"]=accentColor.s} end
 
     local pane = CreateFrame("Frame", nil, parent)
+    if parent then pane:SetFrameLevel(parent:GetFrameLevel() + 1) end
     P.Size(pane, width, height)
     -- Cell.StylizeFrame(pane, {0,1,0,0.1}, {0,0,0,0})
 
@@ -324,6 +325,9 @@ end
 
 function Cell.CreateFrame(name, parent, width, height, isTransparent, template)
     local f = CreateFrame("Frame", name, parent, template)
+    if parent then
+        f:SetFrameLevel(parent:GetFrameLevel() + 1)
+    end
     f:Hide()
     if not isTransparent then Cell.StylizeFrame(f) end
     f:EnableMouse(true)
@@ -619,14 +623,14 @@ function Cell.CreateButton(parent, text, buttonColor, size, noBorder, noBackgrou
             if template and strfind(template, "SecureActionButtonTemplate") then
                 -- NOTE: ActionButtonUseKeyDown will affect OnClick
                 if down == GetCVarBool("ActionButtonUseKeyDown") then
-                    PlaySound(SOUNDKIT.U_CHAT_SCROLL_BUTTON)
+                    PlaySound(Cell.SOUNDKIT.U_CHAT_SCROLL_BUTTON)
                 end
             else
-                PlaySound(SOUNDKIT.U_CHAT_SCROLL_BUTTON)
+                PlaySound(Cell.SOUNDKIT.U_CHAT_SCROLL_BUTTON)
             end
         end)
     else
-        b:SetScript("PostClick", function() PlaySound(SOUNDKIT.U_CHAT_SCROLL_BUTTON) end)
+        b:SetScript("PostClick", function() PlaySound(Cell.SOUNDKIT.U_CHAT_SCROLL_BUTTON) end)
     end
 
     Cell.SetTooltips(b, "ANCHOR_TOPLEFT", 0, 3, ...)
@@ -636,7 +640,7 @@ function Cell.CreateButton(parent, text, buttonColor, size, noBorder, noBackgrou
         b.tex = b:CreateTexture(nil, "ARTWORK")
         b.tex:SetPoint(unpack(point))
         b.tex:SetSize(unpack(texSize))
-        if isAtlas then
+        if isAtlas and b.tex.SetAtlas then
             b.tex:SetAtlas(tex)
         else
             b.tex:SetTexture(tex)
@@ -788,13 +792,11 @@ end
 -- check button
 -----------------------------------------
 function Cell.CreateCheckButton(parent, label, onClick, ...)
-    -- InterfaceOptionsCheckButtonTemplate --> FrameXML\InterfaceOptionsPanels.xml line 19
-    -- OptionsBaseCheckButtonTemplate -->  FrameXML\OptionsPanelTemplates.xml line 10
-
     local cb = CreateFrame("CheckButton", nil, parent)
+    if parent then cb:SetFrameLevel(parent:GetFrameLevel() + 1) end
     cb.onClick = onClick
     cb:SetScript("OnClick", function(self)
-        PlaySound(self:GetChecked() and SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON or SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_OFF)
+        PlaySound(self:GetChecked() and Cell.SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON or Cell.SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_OFF)
         if cb.onClick then cb.onClick(self:GetChecked() and true or false, self) end
     end)
 
@@ -1017,6 +1019,7 @@ end
 
 function Cell.CreateEditBox(parent, width, height, isTransparent, isMultiLine, isNumeric, fontObj)
     local eb = CreateFrame("EditBox", nil, parent, nil)
+    if parent then eb:SetFrameLevel(parent:GetFrameLevel() + 1) end
     if not isTransparent then Cell.StylizeFrame(eb, {0.115, 0.115, 0.115, 0.9}) end
     -- Use font object directly, fallback to _G lookup for WotLK compatibility
     eb:SetFontObject(fontObj or _G[font_name])
@@ -1110,6 +1113,7 @@ end
 function Cell.CreateSlider(name, parent, low, high, width, step, onValueChangedFn, afterValueChangedFn, isPercentage, ...)
     local tooltips = {...}
     local slider = CreateFrame("Slider", nil, parent, nil)
+    if parent then slider:SetFrameLevel(parent:GetFrameLevel() + 1) end
     slider:SetValueStep(step)
     if slider.SetObeyStepOnDrag then
         slider:SetObeyStepOnDrag(true)
@@ -1193,8 +1197,25 @@ function Cell.CreateSlider(name, parent, low, high, width, step, onValueChangedF
 
     -- if tooltip then slider.tooltipText = tooltip end
 
+    local original_SetValue = slider.SetValue
+    slider.SetValue = function(self, v)
+        self._isSetting = true
+        original_SetValue(self, v)
+        self._isSetting = false
+    end
+
+    local original_SetMinMaxValues = slider.SetMinMaxValues
+    slider.SetMinMaxValues = function(self, minV, maxV)
+        self._isSetting = true
+        original_SetMinMaxValues(self, minV, maxV)
+        self._isSetting = false
+    end
+
     local oldValue
     slider:SetScript("OnValueChanged", function(self, value, userChanged)
+        -- WotLK 3.3.5a: userChanged is nil. Determine using _isSetting flag
+        if userChanged == nil then userChanged = not self._isSetting end
+
         if oldValue == value then return end
         oldValue = value
 
@@ -1290,6 +1311,7 @@ end
 -----------------------------------------
 function Cell.CreateSwitch(parent, size, leftText, leftValue, rightText, rightValue, func)
     local switch = CreateFrame("Frame", nil, parent, nil)
+    if parent then switch:SetFrameLevel(parent:GetFrameLevel() + 1) end
     P.Size(switch, size[1], size[2])
     Cell.StylizeFrame(switch, {0.115, 0.115, 0.115, 1})
 
@@ -2263,7 +2285,7 @@ local function CreateItemButtons(items, itemTable, itemParent, level)
 
             -- clear parent menuItem's onClick
             b:SetScript("OnClick", function()
-                PlaySound(SOUNDKIT.U_CHAT_SCROLL_BUTTON)
+                PlaySound(Cell.SOUNDKIT.U_CHAT_SCROLL_BUTTON)
                 if item.onClick then
                     menu:Hide()
                     item.onClick(item.text)
@@ -2279,7 +2301,7 @@ local function CreateItemButtons(items, itemTable, itemParent, level)
             end)
 
             b:SetScript("OnClick", function()
-                PlaySound(SOUNDKIT.U_CHAT_SCROLL_BUTTON)
+                PlaySound(Cell.SOUNDKIT.U_CHAT_SCROLL_BUTTON)
                 menu:Hide()
                 if item.onClick then item.onClick(item.text) end
             end)
@@ -2396,7 +2418,7 @@ local function CreateItemButtons_Scroll(items, itemTable, limit, level)
 
             -- clear parent menuItem's onClick
             b:SetScript("OnClick", function()
-                PlaySound(SOUNDKIT.U_CHAT_SCROLL_BUTTON)
+                PlaySound(Cell.SOUNDKIT.U_CHAT_SCROLL_BUTTON)
                 if item.onClick then
                     menu:Hide()
                     item.onClick(item.text)
@@ -2412,7 +2434,7 @@ local function CreateItemButtons_Scroll(items, itemTable, limit, level)
             end)
 
             b:SetScript("OnClick", function()
-                PlaySound(SOUNDKIT.U_CHAT_SCROLL_BUTTON)
+                PlaySound(Cell.SOUNDKIT.U_CHAT_SCROLL_BUTTON)
                 menu:Hide()
                 if item.onClick then item.onClick(item.text) end
             end)
@@ -2593,6 +2615,7 @@ end
 function Cell.CreateScrollFrame(parent, top, bottom, color, border)
     -- create scrollFrame & scrollbar seperately (instead of UIPanelScrollFrameTemplate), in order to custom it
     local scrollFrame = CreateFrame("ScrollFrame", parent:GetName() and parent:GetName().."ScrollFrame" or nil, parent, nil)
+    if parent then scrollFrame:SetFrameLevel(parent:GetFrameLevel() + 1) end
     parent.scrollFrame = scrollFrame
     top = top or 0
     bottom = bottom or 0
@@ -2830,10 +2853,18 @@ highlightTexture = CreateFrame("Frame", nil, list, nil)
 -- highlightTexture:SetBackdropBorderColor(unpack(accentColor.t))
 highlightTexture:Hide()
 
+local function UpdateFrameLevel(frame, level)
+    frame:SetFrameLevel(level)
+    local children = {frame:GetChildren()}
+    for _, child in pairs(children) do
+        UpdateFrameLevel(child, level + 1)
+    end
+end
+
 list:SetScript("OnShow", function()
     -- list:SetScale(list.menu:GetEffectiveScale())
     list:SetFrameStrata(list.menu:GetFrameStrata())
-    list:SetFrameLevel(list.menu:GetFrameLevel() + 20) -- top
+    UpdateFrameLevel(list, list.menu:GetFrameLevel() + 20)
 end)
 list:SetScript("OnHide", function() list:Hide() end)
 
@@ -2864,6 +2895,7 @@ end
 
 function Cell.CreateDropdown(parent, width, dropdownType, isMini, isHorizontal)
     local menu = CreateFrame("Frame", nil, parent, nil)
+    if parent then menu:SetFrameLevel(parent:GetFrameLevel() + 1) end
     P.Size(menu, width, 20)
     menu:EnableMouse(true)
     -- menu:SetFrameLevel(5)
@@ -3097,7 +3129,7 @@ function Cell.CreateDropdown(parent, width, dropdownType, isMini, isHorizontal)
             end
 
             b:SetScript("OnClick", function()
-                PlaySound(SOUNDKIT.U_CHAT_SCROLL_BUTTON)
+                PlaySound(Cell.SOUNDKIT.U_CHAT_SCROLL_BUTTON)
                 if dropdownType == "texture" then
                     menu:SetSelected(item.text, item.texture)
                 elseif dropdownType == "font" then
@@ -3473,7 +3505,7 @@ function Cell.CreateReceivingFrame(parent)
     f:SetUserPlaced(true)
     f:RegisterForDrag("LeftButton")
     f:SetFrameStrata("DIALOG")
-    f:SetFrameLevel(277)
+    f:SetFrameLevel(50)
     f:SetClampedToScreen(true)
     P.Size(f, 249, 135)
     f:SetPoint("TOPRIGHT", CellParent, "CENTER")

@@ -229,15 +229,17 @@ do
         end
 
         -- Wrap Texture:SetAtlas to handle missing atlases in WotLK 3.3.5
-        -- WotLK has fewer atlases than retail, so we need to gracefully handle missing ones
-        if mt.__index.SetAtlas and not mt.__index._CellSetAtlasWrapped then
+        if not mt.__index.SetAtlas then
+            function mt.__index:SetAtlas(atlasName, useAtlasSize, filterMode)
+                -- WotLK doesn't have SetAtlas. 
+                -- We can just ignore it to prevent Lua errors.
+                self:SetTexture(nil)
+            end
+        elseif not mt.__index._CellSetAtlasWrapped then
             local originalSetAtlas = mt.__index.SetAtlas
             function mt.__index:SetAtlas(atlasName, useAtlasSize, filterMode)
-                -- Try to call the original SetAtlas
                 local success = pcall(originalSetAtlas, self, atlasName, useAtlasSize, filterMode)
                 if not success then
-                    -- Atlas doesn't exist in WotLK, use a fallback
-                    -- Set to a blank/transparent texture to avoid errors
                     self:SetTexture(nil)
                 end
             end
@@ -368,31 +370,12 @@ end
 -- Ensures all created font strings have a default font set
 -- This prevents "Font not set" errors when calling SetText
 -------------------------------------------------
+-------------------------------------------------
+-- Frame CreateFontString polyfill for WotLK
+-- REMOVED TO PREVENT UI TAINT
+-------------------------------------------------
 do
-    local frame = CreateFrame("Frame")
-    local mt = getmetatable(frame)
-
-    if mt and mt.__index and not mt.__index._CellFontStringCreationPolyfill then
-        local origCreateFontString = mt.__index.CreateFontString
-
-        if origCreateFontString then
-            function mt.__index:CreateFontString(name, layer, inheritsFrom)
-                local fontString = origCreateFontString(self, name, layer, inheritsFrom)
-
-                -- WotLK Fix: If no font object was inherited, set a default font to prevent errors
-                -- Check if font is already set (from inheritsFrom)
-                local currentFont, currentSize, currentFlags = fontString:GetFont()
-                if not currentFont then
-                    -- Set a safe default font
-                    fontString:SetFont(STANDARD_TEXT_FONT, 12, "")
-                end
-
-                return fontString
-            end
-
-            mt.__index._CellFontStringCreationPolyfill = true
-        end
-    end
+    -- Removed
 end
 
 -- SmoothStatusBarMixin polyfill for WotLK
@@ -429,34 +412,7 @@ end
 -- We wrap it to ensure it always returns a valid texture
 -------------------------------------------------
 do
-    local sb = CreateFrame("StatusBar")
-    local mt = getmetatable(sb)
-
-    if mt and mt.__index then
-        local origGetStatusBarTexture = mt.__index.GetStatusBarTexture
-        local origSetStatusBarTexture = mt.__index.SetStatusBarTexture
-
-        -- Wrap SetStatusBarTexture to cache the texture path
-        if origSetStatusBarTexture then
-            function mt.__index:SetStatusBarTexture(texture, layer, sublayer)
-                self._cellCachedTexturePath = texture
-                return origSetStatusBarTexture(self, texture, layer, sublayer)
-            end
-        end
-
-        -- Wrap GetStatusBarTexture to ensure it returns a texture
-        if origGetStatusBarTexture then
-            function mt.__index:GetStatusBarTexture()
-                local tex = origGetStatusBarTexture(self)
-                -- If texture is nil but we have a cached path, try setting it again
-                if not tex and self._cellCachedTexturePath then
-                    origSetStatusBarTexture(self, self._cellCachedTexturePath)
-                    tex = origGetStatusBarTexture(self)
-                end
-                return tex
-            end
-        end
-    end
+    -- Removed to prevent UI taint
 end
 
 -------------------------------------------------
@@ -465,7 +421,7 @@ end
 
 if not UnitInOtherParty then
     -- Retail API: returns true if unit is in a different party/instance group.
-    -- WotLK/Ascension doesn't have that concept, so just say "no".
+    -- WotLK doesn't have that concept, so just say "no".
     function UnitInOtherParty(unit)
         return false
     end
@@ -566,7 +522,6 @@ if not UnitGroupRolesAssigned then
         end
         
         -- Final fallback: Default to DAMAGER if still no role detected
-        -- This helps on custom servers like Ascension where spec detection may not work
         if not isTank and not isHealer and not isDamage then
             isDamage = true
             roleSource = "default fallback"
@@ -839,24 +794,7 @@ end
 
 -- Cooldown OnCooldownDone polyfill for 3.3.5a (ignore unsupported script type)
 do
-    local cd = CreateFrame("Cooldown")
-    local mt = getmetatable(cd)
-
-    if mt and mt.__index and not mt.__index._CellOnCooldownDoneShim then
-        local origSetScript = mt.__index.SetScript
-
-        function mt.__index:SetScript(scriptType, handler)
-            -- Retail-only script type; WotLK cooldowns don't support it
-            if scriptType == "OnCooldownDone" then
-                -- No native support in 3.3.5a; safely ignore
-                return
-            end
-
-            return origSetScript(self, scriptType, handler)
-        end
-
-        mt.__index._CellOnCooldownDoneShim = true
-    end
+    -- Removed to prevent UI taint
 end
 
 
@@ -1491,19 +1429,18 @@ do
 end
 
 -- SOUNDKIT
-if not SOUNDKIT then
-    SOUNDKIT = {
-        U_CHAT_SCROLL_BUTTON = "UChatScrollButton",
-        IG_MAINMENU_OPTION_CHECKBOX_ON = "igMainMenuOptionCheckBoxOn",
-        IG_MAINMENU_OPTION_CHECKBOX_OFF = "igMainMenuOptionCheckBoxOff",
-        IG_MAINMENU_OPEN = "igMainMenuOpen",
-        IG_MAINMENU_CLOSE = "igMainMenuClose",
-        IG_ABILITY_PAGE_TURN = "igAbilityPageTurn",
-        IG_CHARACTER_INFO_TAB = "igCharacterInfoTab",
-        IG_BACKPACK_OPEN = "igBackPackOpen",
-        IG_BACKPACK_CLOSE = "igBackPackClose",
-    }
-end
+Cell.SOUNDKIT = {
+    U_CHAT_SCROLL_BUTTON = "igChatScrollUp",
+    IG_MAINMENU_OPTION_CHECKBOX_ON = "igMainMenuOptionCheckBoxOn",
+    IG_MAINMENU_OPTION_CHECKBOX_OFF = "igMainMenuOptionCheckBoxOff",
+    IG_MAINMENU_OPEN = "igMainMenuOpen",
+    IG_MAINMENU_CLOSE = "igMainMenuClose",
+    IG_ABILITY_PAGE_TURN = "igAbilityPageTurn",
+    IG_CHARACTER_INFO_TAB = "igCharacterInfoTab",
+    IG_BACKPACK_OPEN = "igBackPackOpen",
+    IG_BACKPACK_CLOSE = "igBackPackClose",
+}
+
 
 -- C_ClassTalents (Retail talent system, not in WotLK)
 if not C_ClassTalents then
@@ -1553,26 +1490,7 @@ end
 -- Ignore bad / nil reference frames instead of erroring.
 -------------------------------------------------
 do
-    local ok, test = pcall(CreateFrame, "Frame", nil, UIParent, "SecureHandlerStateTemplate")
-    if ok and test then
-        local mt = getmetatable(test)
-        if mt and mt.__index
-           and type(mt.__index.SetFrameRef) == "function"
-           and not mt.__index._CellSetFrameRefShim
-        then
-            local origSetFrameRef = mt.__index.SetFrameRef
-
-            function mt.__index:SetFrameRef(refKey, refFrame)
-                -- If the reference is missing or obviously not a frame, just ignore.
-                if not refFrame or type(refFrame) ~= "table" or type(refFrame.GetName) ~= "function" then
-                    return
-                end
-                return origSetFrameRef(self, refKey, refFrame)
-            end
-
-            mt.__index._CellSetFrameRefShim = true
-        end
-    end
+    -- Removed to prevent UI taint
 end
 
 
@@ -1595,7 +1513,40 @@ end
 if not GetNumClasses then
     function GetNumClasses()
         -- WotLK has 10 classes: Warrior, Paladin, Hunter, Rogue, Priest, Death Knight, Shaman, Mage, Warlock, Druid
-        return 10
+        -- We return 11 because Druid's class ID is 11
+        return 11
+    end
+end
+
+-- GetClassInfo (doesn't exist in WotLK 3.3.5a)
+if not GetClassInfo then
+    local wotlkClasses = {
+        [1] = "WARRIOR",
+        [2] = "PALADIN",
+        [3] = "HUNTER",
+        [4] = "ROGUE",
+        [5] = "PRIEST",
+        [6] = "DEATHKNIGHT",
+        [7] = "SHAMAN",
+        [8] = "MAGE",
+        [9] = "WARLOCK",
+        [11] = "DRUID",
+    }
+    
+    local localizedClassNames
+    function GetClassInfo(classID)
+        local classFile = wotlkClasses[classID]
+        if not classFile then return nil end
+        
+        if not localizedClassNames then
+            localizedClassNames = {}
+            if FillLocalizedClassList then
+                FillLocalizedClassList(localizedClassNames)
+            end
+        end
+        
+        local locName = localizedClassNames[classFile] or classFile
+        return locName, classFile, classID
     end
 end
 
@@ -1635,6 +1586,9 @@ if RAID_CLASS_COLORS then
             end
             function color:GetRGBA()
                 return self.r, self.g, self.b, self.a or 1
+            end
+            if not color.colorStr then
+                color.colorStr = string.format("ff%02x%02x%02x", (color.r or 1) * 255, (color.g or 1) * 255, (color.b or 1) * 255)
             end
         end
     end
@@ -1722,18 +1676,11 @@ end
 -- In WotLK 3.3.5a, PlaySound signature is different from retail
 -- Store original PlaySound and wrap it to handle errors gracefully
 do
-    local _originalPlaySound = PlaySound
-    if _originalPlaySound then
-        PlaySound = function(soundKit, channel)
-            -- In WotLK, PlaySound only takes soundFile/soundName, not soundKitID + channel
-            -- Silently fail if sound doesn't work
-            pcall(_originalPlaySound, soundKit)
-        end
-    end
+-- PlaySound wrapper removed as overwriting the global function taints the UI's secure execution paths.
 end
 
 -- GetNormalizedRealmName
--- In WotLK 3.3.5a (Ascension), this function exists but might be broken (calls nil 'Sub')
+-- In WotLK 3.3.5a, this function exists but might be broken (calls nil 'Sub')
 -- We overwrite it to ensure it works correctly
 GetNormalizedRealmName = function()
     local realm = GetRealmName()
@@ -1858,31 +1805,7 @@ do
         end
     end
 
-    -- Automatically register frames that call RegisterEvent("GROUP_ROSTER_UPDATE")
-    do
-        local sample = CreateFrame("Frame")
-        local mt = sample and getmetatable(sample)
-        mt = mt and mt.__index
-        if mt and mt.RegisterEvent and not mt._CellGroupRosterHook then
-            hooksecurefunc(mt, "RegisterEvent", function(self, event)
-                if event == "GROUP_ROSTER_UPDATE" then
-                    Cell_RegisterForGroupRosterProxy(self)
-                end
-            end)
-
-            hooksecurefunc(mt, "UnregisterEvent", function(self, event)
-                if event == "GROUP_ROSTER_UPDATE" then
-                    Cell_UnregisterFromGroupRosterProxy(self)
-                end
-            end)
-
-            hooksecurefunc(mt, "UnregisterAllEvents", function(self)
-                Cell_UnregisterFromGroupRosterProxy(self)
-            end)
-
-            mt._CellGroupRosterHook = true
-        end
-    end
+    -- Hook removed to prevent taint. Addons must explicitly call Cell_RegisterForGroupRosterProxy.
 end
 
 -- LocalizedClassList
@@ -1912,6 +1835,64 @@ if not Mixin then
     end
 end
 
+if not CreateFromMixins then
+    function CreateFromMixins(...)
+        local obj = {}
+        Mixin(obj, ...)
+        return obj
+    end
+end
+
+if not CreateObjectPool then
+    local ObjectPoolMixin = {}
+    ObjectPoolMixin.__index = ObjectPoolMixin
+    
+    function ObjectPoolMixin:Acquire()
+        local obj = next(self.inactiveObjects)
+        local isNew = false
+        if obj then
+            self.inactiveObjects[obj] = nil
+        else
+            obj = self.creationFunc(self)
+            isNew = true
+        end
+        self.activeObjects[obj] = true
+        if not isNew and self.resetterFunc then
+            self.resetterFunc(self, obj)
+        end
+        return obj, isNew
+    end
+    
+    function ObjectPoolMixin:Release(obj)
+        if self.activeObjects[obj] then
+            self.activeObjects[obj] = nil
+            self.inactiveObjects[obj] = true
+            if self.resetterFunc then
+                self.resetterFunc(self, obj)
+            end
+        end
+    end
+    
+    function ObjectPoolMixin:ReleaseAll()
+        for obj in pairs(self.activeObjects) do
+            self:Release(obj)
+        end
+    end
+    
+    function ObjectPoolMixin:EnumerateActive()
+        return pairs(self.activeObjects)
+    end
+    
+    function CreateObjectPool(creationFunc, resetterFunc)
+        local pool = setmetatable({}, ObjectPoolMixin)
+        pool.creationFunc = creationFunc
+        pool.resetterFunc = resetterFunc
+        pool.activeObjects = {}
+        pool.inactiveObjects = {}
+        return pool
+    end
+end
+
 -------------------------------------------------
 -- Frame/Widget SetEnabled polyfill for WotLK
 -- In retail, frames/widgets have SetEnabled(bool) to enable/disable
@@ -1927,10 +1908,13 @@ do
                     if self.Enable then
                         self:Enable()
                     end
+                    if self.EnableMouse then self:EnableMouse(true) end
                 else
                     if self.Disable then
                         self:Disable()
                     end
+                    if self.EnableMouse then self:EnableMouse(false) end
+                    if self.ClearFocus then self:ClearFocus() end
                 end
             end
         end
@@ -1940,6 +1924,8 @@ do
     local function safeAdd(frameType)
         local ok, frame = pcall(CreateFrame, frameType)
         if ok and frame then
+            if frame.SetAutoFocus then pcall(frame.SetAutoFocus, frame, false) end
+            if frame.Hide then pcall(frame.Hide, frame) end
             addSetEnabled(frame)
         end
     end
@@ -1948,6 +1934,75 @@ do
     safeAdd("Slider")
     safeAdd("Button")
     safeAdd("CheckButton")
+    safeAdd("EditBox")
+end
+
+-------------------------------------------------
+-- SetIgnoreParentAlpha polyfill for WotLK
+-- In retail, UI objects have SetIgnoreParentAlpha(bool)
+-- In WotLK, this doesn't exist and alpha inheritance cannot be disabled.
+-------------------------------------------------
+do
+    local function addSetIgnoreParentAlpha(obj)
+        if not obj then return end
+        local mt = getmetatable(obj)
+        if mt and mt.__index and not mt.__index.SetIgnoreParentAlpha then
+            function mt.__index:SetIgnoreParentAlpha(ignore)
+                -- No-op for WotLK
+            end
+        end
+    end
+
+    local testFrame = CreateFrame("Frame")
+    addSetIgnoreParentAlpha(testFrame)
+    
+    local testButton = CreateFrame("Button")
+    addSetIgnoreParentAlpha(testButton)
+    
+    local testTexture = testFrame:CreateTexture()
+    addSetIgnoreParentAlpha(testTexture)
+    
+    local testFontString = testFrame:CreateFontString()
+    addSetIgnoreParentAlpha(testFontString)
+    
+    local testStatusBar = CreateFrame("StatusBar")
+    addSetIgnoreParentAlpha(testStatusBar)
+end
+
+-------------------------------------------------
+-- SetShown polyfill for WotLK
+-- In retail, UI objects have SetShown(bool)
+-- In WotLK, use Show() and Hide()
+-------------------------------------------------
+do
+    local function addSetShown(obj)
+        if not obj then return end
+        local mt = getmetatable(obj)
+        if mt and mt.__index and not mt.__index.SetShown then
+            function mt.__index:SetShown(shown)
+                if shown then
+                    self:Show()
+                else
+                    self:Hide()
+                end
+            end
+        end
+    end
+
+    local testFrame = CreateFrame("Frame")
+    addSetShown(testFrame)
+    
+    local testButton = CreateFrame("Button")
+    addSetShown(testButton)
+    
+    local testTexture = testFrame:CreateTexture()
+    addSetShown(testTexture)
+    
+    local testFontString = testFrame:CreateFontString()
+    addSetShown(testFontString)
+    
+    local testStatusBar = CreateFrame("StatusBar")
+    addSetShown(testStatusBar)
 end
 
 -------------------------------------------------
@@ -1975,37 +2030,7 @@ end
 -- We wrap SetValue to flag programmatic changes so callbacks can distinguish
 -------------------------------------------------
 do
-    local slider = CreateFrame("Slider")
-    local mt = getmetatable(slider)
-
-    if mt and mt.__index and not mt.__index._CellSliderPolyfillApplied then
-        local origSetValue = mt.__index.SetValue
-        local origSetScript = mt.__index.SetScript
-
-        -- Wrap SetValue to flag programmatic changes
-        function mt.__index:SetValue(value)
-            self._isProgrammaticChange = true
-            origSetValue(self, value)
-            self._isProgrammaticChange = false
-        end
-
-        -- Wrap SetScript to intercept OnValueChanged and fix userChanged parameter
-        function mt.__index:SetScript(scriptType, handler)
-            if scriptType == "OnValueChanged" and handler then
-                local wrappedHandler = function(self, value, userChanged)
-                    -- WRATH FIX: userChanged is nil in 3.3.5
-                    if userChanged == nil then
-                        userChanged = not self._isProgrammaticChange
-                    end
-                    return handler(self, value, userChanged)
-                end
-                return origSetScript(self, scriptType, wrappedHandler)
-            end
-            return origSetScript(self, scriptType, handler)
-        end
-
-        mt.__index._CellSliderPolyfillApplied = true
-    end
+    -- Removed to prevent UI taint
 end
 
 -------------------------------------------------
@@ -2657,4 +2682,61 @@ end
 if not BackdropTemplateMixin then
     -- Create an empty mixin (backdrop functions already exist natively in Wrath)
     BackdropTemplateMixin = {}
+end
+
+-------------------------------------------------
+-- Unit absorbs polyfill for WotLK
+-- These don't exist natively, we return 0
+-------------------------------------------------
+if not UnitGetTotalAbsorbs then
+    function UnitGetTotalAbsorbs(unit)
+        return 0
+    end
+end
+
+if not UnitGetTotalHealAbsorbs then
+    function UnitGetTotalHealAbsorbs(unit)
+        return 0
+    end
+end
+
+-------------------------------------------------
+-- AuraUtil polyfill for WotLK
+-------------------------------------------------
+if not AuraUtil then
+    AuraUtil = {}
+end
+
+if not AuraUtil.FindAura then
+    function AuraUtil.FindAura(predicate, unit, filter, predicateArg1, predicateArg2, predicateArg3)
+        for i = 1, 40 do
+            -- WotLK UnitAura returns: name, rank, icon, count, debuffType, duration, expirationTime, source, isStealable, shouldConsolidate, spellId
+            local name, rank, icon, count, debuffType, duration, expirationTime, source, isStealable, shouldConsolidate, spellId = UnitAura(unit, i, filter)
+            if not name then break end
+            
+            -- Call predicate matching retail signature (without rank, adding nameplateShowPersonal)
+            local nameplateShowPersonal = false
+            if predicate(predicateArg1, predicateArg2, predicateArg3, name, icon, count, debuffType, duration, expirationTime, source, isStealable, nameplateShowPersonal, spellId) then
+                return name, icon, count, debuffType, duration, expirationTime, source, isStealable, nameplateShowPersonal, spellId
+            end
+        end
+        return nil
+    end
+end
+
+if not AuraUtil.ForEachAura then
+    function AuraUtil.ForEachAura(unit, filter, maxCount, func, usePackedAura)
+        local countIter = 0
+        for i = 1, 40 do
+            local name, rank, icon, count, debuffType, duration, expirationTime, source, isStealable, shouldConsolidate, spellId = UnitAura(unit, i, filter)
+            if not name then break end
+            
+            local nameplateShowPersonal = false
+            local result = func(name, icon, count, debuffType, duration, expirationTime, source, isStealable, nameplateShowPersonal, spellId)
+            countIter = countIter + 1
+            if result or (maxCount and countIter >= maxCount) then
+                break
+            end
+        end
+    end
 end

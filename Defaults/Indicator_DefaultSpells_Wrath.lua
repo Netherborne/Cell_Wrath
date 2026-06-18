@@ -420,7 +420,10 @@ local drinks = {
 do
     local temp = {}
     for _, id in pairs(drinks) do
-        temp[F.GetSpellInfo(id)] = true
+        local name = F.GetSpellInfo(id)
+        if name then
+            temp[name] = true
+        end
     end
     drinks = temp
 end

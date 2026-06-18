@@ -134,12 +134,12 @@ local function SetOnUpdate(indicator, type, icon, stack, extra)
         self.elapsedTime = (self.elapsedTime or 0) + elapsed
         if self.elapsedTime >= 13 then
             self.elapsedTime = 0
-            indicator:SetCooldown(GetTime(), 13, type, icon, stack, false, extra)
+            indicator:SetCooldown(GetTime(), 13, type, icon, stack, true, extra)
         end
     end)
     indicator:SetScript("OnShow", function()
         indicator.preview.elapsedTime = 0
-        indicator:SetCooldown(GetTime(), 13, type, icon, stack, false, extra)
+        indicator:SetCooldown(GetTime(), 13, type, icon, stack, true, extra)
     end)
 end
 
@@ -427,13 +427,13 @@ local function InitIndicator(indicatorName)
         for i = 1, 3 do
             indicator[i]:HookScript("OnShow", function()
                 indicator[i]:SetCooldown(GetTime(), 13, types[i], "Interface\\Icons\\INV_Misc_QuestionMark", 7)
-                indicator[i].cooldown:SetScript("OnCooldownDone", function()
+                indicator[i].cooldown:SetScript("OnHide", function()
                     indicator[i]:SetCooldown(GetTime(), 13, types[i], "Interface\\Icons\\INV_Misc_QuestionMark", 7)
                 end)
             end)
             indicator[i]:HookScript("OnHide", function()
                 indicator[i].cooldown:Hide()
-                indicator[i].cooldown:SetScript("OnCooldownDone", nil)
+                indicator[i].cooldown:SetScript("OnHide", nil)
             end)
         end
 
@@ -479,13 +479,13 @@ local function InitIndicator(indicatorName)
         for _, f in ipairs(indicator) do
             f:HookScript("OnShow", function()
                 f:SetCooldown(GetTime(), 3, "Interface\\Icons\\ability_warlock_chaosbolt", 7)
-                f.cooldown:SetScript("OnCooldownDone", function()
+                f.cooldown:SetScript("OnHide", function()
                     f:SetCooldown(GetTime(), 3, "Interface\\Icons\\ability_warlock_chaosbolt", 7)
                 end)
             end)
             f:HookScript("OnHide", function()
                 f.cooldown:Hide()
-                f.cooldown:SetScript("OnCooldownDone", nil)
+                f.cooldown:SetScript("OnHide", nil)
             end)
         end
 
@@ -502,13 +502,13 @@ local function InitIndicator(indicatorName)
         for i = 1, 3 do
             indicator[i]:HookScript("OnShow", function()
                 indicator[i]:SetCooldown(GetTime(), 13, spells[i][1], spells[i][2], 7)
-                indicator[i].cooldown:SetScript("OnCooldownDone", function()
+                indicator[i].cooldown:SetScript("OnHide", function()
                     indicator[i]:SetCooldown(GetTime(), 13, spells[i][1], spells[i][2], 7)
                 end)
             end)
             indicator[i]:HookScript("OnHide", function()
                 indicator[i].cooldown:Hide()
-                indicator[i].cooldown:SetScript("OnCooldownDone", nil)
+                indicator[i].cooldown:SetScript("OnHide", nil)
             end)
         end
 
@@ -660,17 +660,6 @@ local function UpdateIndicators(layout, indicatorName, setting, value, value2)
                     indicator:SetAlpha(t["alpha"])
                     -- indicator.alpha = t["alpha"]
                 end
-                -- update num
-                if t["num"] then
-                    for i, frame in ipairs(indicator) do
-                        if i <= t["num"] then
-                            frame:Show()
-                        else
-                            frame:Hide()
-                        end
-                    end
-                    if indicator.UpdateSize then indicator:UpdateSize(t["num"]) end
-                end
                 -- update format
                 if t["format"] then
                     indicator:SetFormat(t["format"])
@@ -738,6 +727,11 @@ local function UpdateIndicators(layout, indicatorName, setting, value, value2)
                 if type(t["showAnimation"]) == "boolean" then
                     indicator:ShowAnimation(t["showAnimation"])
                 end
+                if type(t["showJumpingAnimation"]) == "boolean" then
+                    if indicator.ShowJumpingAnimation then
+                        indicator:ShowJumpingAnimation(t["showJumpingAnimation"])
+                    end
+                end
                 -- update duration
                 if type(t["showDuration"]) == "boolean" or type(t["showDuration"]) == "number" then
                     indicator:ShowDuration(t["showDuration"])
@@ -788,6 +782,18 @@ local function UpdateIndicators(layout, indicatorName, setting, value, value2)
                 -- update smooth
                 if type(t["smooth"]) == "boolean" then
                     indicator:EnableSmooth(t["smooth"])
+                end
+
+                -- update num
+                if t["num"] then
+                    for i, frame in ipairs(indicator) do
+                        if i <= t["num"] then
+                            frame:Show()
+                        else
+                            frame:Hide()
+                        end
+                    end
+                    if indicator.UpdateSize then indicator:UpdateSize(t["num"]) end
                 end
 
                 -- after init
@@ -976,6 +982,15 @@ local function UpdateIndicators(layout, indicatorName, setting, value, value2)
                     indicator:Hide()
                     indicator:Show()
                 end
+            elseif value == "showJumpingAnimation" then
+                if indicator.ShowJumpingAnimation then
+                    indicator:ShowJumpingAnimation(value2)
+                end
+                if indicator.enabled then
+                    -- update through OnShow
+                    indicator:Hide()
+                    indicator:Show()
+                end
             elseif value == "showStack" then
                 indicator:ShowStack(value2)
             elseif value == "fadeOut" then
@@ -1056,6 +1071,11 @@ local function UpdateIndicators(layout, indicatorName, setting, value, value2)
             -- update animation
             if type(value["showAnimation"]) == "boolean" then
                 indicator:ShowAnimation(value["showAnimation"])
+            end
+            if type(value["showJumpingAnimation"]) == "boolean" then
+                if indicator.ShowJumpingAnimation then
+                    indicator:ShowJumpingAnimation(value["showJumpingAnimation"])
+                end
             end
             -- update stack
             if type(value["showStack"]) ~= "nil" then
@@ -1553,6 +1573,7 @@ end
 local indicatorSettings
 local DEBUFFS_TOOLTIP1 = L["This will make these icons not click-through-able"].."|"..L["Tooltips need to be enabled in General tab"]
 local DEBUFFS_TOOLTIP2 = L["This will make these icons not click-through-able"]
+local DEBUFFS_TOOLTIP3 = L["Play jumping animation on aura application and refresh"]
 
 
 
@@ -1584,7 +1605,7 @@ indicatorSettings = {
 ["defensiveCooldowns"] = {L["Even if disabled, the settings below affect \"Externals + Defensives\" indicator"], "enabled", "builtInDefensives", "customDefensives", "durationVisibility", "checkbutton:showAnimation", "glowOptions", "size", "num:5", "orientation", "position", "frameLevel", "font1:stackFont", "font2:durationFont"},
 ["allCooldowns"] = {"enabled", "durationVisibility", "checkbutton:showAnimation", "glowOptions", "size", "num:5", "orientation", "position", "frameLevel", "font1:stackFont", "font2:durationFont"},
 ["dispels"] = {"enabled", "dispelFilters", "highlightType", "dispelBlacklist", "iconStyle", "orientation", "size-square", "position", "frameLevel"},
-["debuffs"] = {"enabled", "checkbutton:dispellableByMe", "debuffBlacklist", "bigDebuffs", "durationVisibility", "checkbutton2:showAnimation", "checkbutton3:showTooltip:"..DEBUFFS_TOOLTIP1, "checkbutton4:enableBlacklistShortcut:"..DEBUFFS_TOOLTIP2, "size-normal-big", "num:10", "orientation", "position", "frameLevel", "font1:stackFont", "font2:durationFont"},
+["debuffs"] = {"enabled", "checkbutton:dispellableByMe", "debuffBlacklist", "bigDebuffs", "durationVisibility", "checkbutton2:showAnimation", "checkbutton3:showTooltip:"..DEBUFFS_TOOLTIP1, "checkbutton4:enableBlacklistShortcut:"..DEBUFFS_TOOLTIP2, "checkbutton5:showJumpingAnimation:"..DEBUFFS_TOOLTIP3, "size-normal-big", "num:10", "orientation", "position", "frameLevel", "font1:stackFont", "font2:durationFont"},
 ["raidDebuffs"] = {"|cffb7b7b7"..L["You can config debuffs in %s"]:format(Cell.GetAccentColorString()..L["Raid Debuffs"].."|r"), "enabled", "checkbutton:onlyShowTopGlow", "durationVisibility", "checkbutton2:showTooltip:"..DEBUFFS_TOOLTIP1, "size-border", "num:3", "orientation", "position", "frameLevel", "font1:stackFont", "font2:durationFont"},
 ["targetedSpells"] = {"enabled", "checkbutton:showAllSpells:"..L["Glow is only available to the spells in the list below"], "targetedSpellsList", "targetedSpellsGlow", "size-border", "num:3", "orientation", "position", "frameLevel", "font"},
 ["targetCounter"] = {"|cffff2727"..L["HIGH CPU USAGE"].."!|r |cffb7b7b7"..L["Check all visible enemy nameplates."], "enabled", "targetCounterFilters", "color", "position", "frameLevel", "font-noOffset"},
@@ -1620,9 +1641,9 @@ local function ShowIndicatorSettings(id)
         -- end
     else
         if indicatorType == "icon" then
-            settingsTable = {"enabled", "auras", "checkbutton3:showStack", "durationVisibility", "checkbutton4:showAnimation", "glowOptions", CELL_RECTANGULAR_CUSTOM_INDICATOR_ICONS and "size" or "size-square", "position", "frameLevel", "font1:stackFont", "font2:durationFont"}
+            settingsTable = {"enabled", "auras", "checkbutton3:showStack", "durationVisibility", "checkbutton4:showAnimation", "checkbutton5:showJumpingAnimation:"..DEBUFFS_TOOLTIP3, "glowOptions", CELL_RECTANGULAR_CUSTOM_INDICATOR_ICONS and "size" or "size-square", "position", "frameLevel", "font1:stackFont", "font2:durationFont"}
         elseif indicatorType == "icons" then
-            settingsTable = {"enabled", "auras", "checkbutton3:showStack", "durationVisibility", "checkbutton4:showAnimation", "glowOptions", CELL_RECTANGULAR_CUSTOM_INDICATOR_ICONS and "size" or "size-square", "num:10", "numPerLine:10", "spacing", "orientation", "position", "frameLevel", "font1:stackFont", "font2:durationFont"}
+            settingsTable = {"enabled", "auras", "checkbutton3:showStack", "durationVisibility", "checkbutton4:showAnimation", "checkbutton5:showJumpingAnimation:"..DEBUFFS_TOOLTIP3, "glowOptions", CELL_RECTANGULAR_CUSTOM_INDICATOR_ICONS and "size" or "size-square", "num:10", "numPerLine:10", "spacing", "orientation", "position", "frameLevel", "font1:stackFont", "font2:durationFont"}
         elseif indicatorType == "text" then
             settingsTable = {"enabled", "auras", "duration", "stack", "colors", "position", "frameLevel", "font-noOffset"}
         elseif indicatorType == "bar" then
@@ -1705,7 +1726,12 @@ local function ShowIndicatorSettings(id)
         -- checkbutton
         elseif string.find(currentSetting, "^checkbutton") then
             local _, setting, tooltip = string.split(":", currentSetting)
-            w:SetDBValue(setting, indicatorTable[setting], tooltip)
+            local value = indicatorTable[setting]
+            if setting == "showJumpingAnimation" and type(value) ~= "boolean" then
+                value = true
+                indicatorTable[setting] = true
+            end
+            w:SetDBValue(setting, value, tooltip)
             w:SetFunc(function(value)
                 indicatorTable[setting] = value
                 Cell.Fire("UpdateIndicators", notifiedLayout, indicatorName, "checkbutton", setting, value) -- indicatorName, setting, value, value2

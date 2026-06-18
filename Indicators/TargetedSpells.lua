@@ -155,26 +155,28 @@ local function CheckUnitCast(sourceUnit, isRecheck)
         end
     end
 
-    -- name, text, texture, startTimeMS, endTimeMS, isTradeSkill, castID, notInterruptible, spellId
-    local name, _, texture, startTimeMS, endTimeMS, _, _, notInterruptible, spellId = UnitCastingInfo(sourceUnit)
+    -- name, nameSubtext, text, texture, startTimeMS, endTimeMS, isTradeSkill, castID, notInterruptible, spellId
+    local name, _, _, texture, startTimeMS, endTimeMS, _, _, notInterruptible,spellId = UnitCastingInfo(sourceUnit)
     if not name then
-        -- name, text, texture, startTimeMS, endTimeMS, isTradeSkill, notInterruptible, spellId
-        name, _, texture, startTimeMS, endTimeMS, _, notInterruptible, spellId = UnitChannelInfo(sourceUnit)
+        -- name, nameSubtext, text, texture, startTimeMS, endTimeMS, isTradeSkill, notInterruptible, spellId
+        name, _, _, texture, startTimeMS, endTimeMS, _,_, notInterruptible, spellId = UnitChannelInfo(sourceUnit)
         isChanneling = true
     end
+
+    spellId = spellId or name
 
     -- print(sourceUnit, name, spellId)
 
     if spellId and (Cell.vars.targetedSpellsList[spellId] or showAllSpells) then
         if casts[sourceGUID] then
-            casts[sourceGUID]["startTime"] = startTimeMS/1000
-            casts[sourceGUID]["endTime"] = endTimeMS/1000
+            casts[sourceGUID]["startTime"] = startTimeMS and startTimeMS/1000 or GetTime()
+            casts[sourceGUID]["endTime"] = endTimeMS and endTimeMS/1000 or (GetTime() + 60)
             casts[sourceGUID]["spellId"] = spellId
             casts[sourceGUID]["icon"] = texture
         else
             casts[sourceGUID] = {
-                ["startTime"] = startTimeMS/1000,
-                ["endTime"] = endTimeMS/1000,
+                ["startTime"] = startTimeMS and startTimeMS/1000 or GetTime(),
+                ["endTime"] = endTimeMS and endTimeMS/1000 or (GetTime() + 60),
                 ["spellId"] = spellId,
                 ["icon"] = texture,
                 ["isChanneling"] = isChanneling,
@@ -244,17 +246,57 @@ eventFrame:SetScript("OnUpdate", function(self, elapsed)
     end
 end)
 
+local function FindUnitByGUID(guid)
+    if not guid then return end
+    if UnitGUID("target") == guid then return "target" end
+    if UnitGUID("focus") == guid then return "focus" end
+    if UnitGUID("mouseover") == guid then return "mouseover" end
+
+    if IsInRaid() then
+        for i = 1, GetNumGroupMembers() do
+            if UnitGUID("raid"..i.."target") == guid then return "raid"..i.."target" end
+        end
+    elseif IsInGroup() then
+        for i = 1, GetNumSubgroupMembers() do
+            if UnitGUID("party"..i.."target") == guid then return "party"..i.."target" end
+        end
+    end
+
+    for i = 1, 40 do
+        if UnitGUID("nameplate"..i) == guid then return "nameplate"..i end
+    end
+end
+
 -------------------------------------------------
 -- events
 -------------------------------------------------
-eventFrame:SetScript("OnEvent", function(_, event, sourceUnit)
+eventFrame:SetScript("OnEvent", function(_, event, ...)
+    if event == "COMBAT_LOG_EVENT_UNFILTERED" then
+        local timestamp, cleuEvent, hideCaster, sourceGUID, sourceName, sourceFlags, sourceRaidFlags, destGUID, destName, destFlags, destRaidFlags, spellId, spellName
+        if CombatLogGetCurrentEventInfo then
+            timestamp, cleuEvent, hideCaster, sourceGUID, sourceName, sourceFlags, sourceRaidFlags, destGUID, destName, destFlags, destRaidFlags, spellId, spellName = CombatLogGetCurrentEventInfo()
+        else
+            timestamp, cleuEvent, hideCaster, sourceGUID, sourceName, sourceFlags, destGUID, destName, destFlags, spellId, spellName = ...
+        end
+        if cleuEvent == "SPELL_CAST_START" then
+            if spellId and (Cell.vars.targetedSpellsList[spellId] or showAllSpells) then
+                local unit = FindUnitByGUID(sourceGUID)
+                if unit then
+                    CheckUnitCast(unit)
+                end
+            end
+        end
+        return
+    end
+
+    local sourceUnit = ...
     if event == "ENCOUNTER_END" then
         Reset()
         F.IterateAllUnitButtons(HideCasts, true)
         return
     end
 
-    if sourceUnit and strfind(sourceUnit, "^soft") then return end
+    if sourceUnit and type(sourceUnit) == "string" and strfind(sourceUnit, "^soft") then return end
 
     if event == "PLAYER_TARGET_CHANGED" then
         CheckUnitCast("target")
@@ -373,7 +415,7 @@ function I.CreateTargetedSpells(parent)
         frame.SetCooldown = SetCooldown
         -- frame:SetScript("OnShow", targetedSpells.UpdateSize)
         -- frame:SetScript("OnHide", targetedSpells.UpdateSize)
-        frame.cooldown:SetScript("OnCooldownDone", function()
+        frame.cooldown:SetScript("OnHide", function()
             frame:Hide()
         end)
     end
@@ -388,6 +430,7 @@ local function EnterLeaveInstance()
     F.IterateAllUnitButtons(HideCasts, true)
 end
 
+local cleanupTicker
 function I.EnableTargetedSpells(enabled)
     if enabled then
         F.IterateAllUnitButtons(function(b)
@@ -411,14 +454,38 @@ function I.EnableTargetedSpells(enabled)
         eventFrame:RegisterEvent("NAME_PLATE_UNIT_ADDED")
         eventFrame:RegisterEvent("NAME_PLATE_UNIT_REMOVED")
 
+        eventFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
         eventFrame:RegisterEvent("ENCOUNTER_END")
 
         Cell.RegisterCallback("EnterInstance", "TargetedSpells_EnterInstance", EnterLeaveInstance)
         Cell.RegisterCallback("LeaveInstance", "TargetedSpells_LeaveInstance", EnterLeaveInstance)
+
+        if not cleanupTicker and C_Timer and C_Timer.NewTicker then
+            cleanupTicker = C_Timer.NewTicker(0.5, function()
+                local currentTime = GetTime()
+                local expired = {}
+                for sourceGUID, castInfo in pairs(casts) do
+                    if castInfo.endTime <= currentTime then
+                        expired[sourceGUID] = castInfo.targetGUID or "NONE"
+                    end
+                end
+                for sourceGUID, targetGUID in pairs(expired) do
+                    casts[sourceGUID] = nil
+                    if targetGUID ~= "NONE" then
+                        UpdateCastsOnUnit(targetGUID)
+                    end
+                end
+            end)
+        end
     else
         Reset()
         eventFrame:Hide()
         eventFrame:UnregisterAllEvents()
+
+        if cleanupTicker then
+            cleanupTicker:Cancel()
+            cleanupTicker = nil
+        end
 
         Cell.UnregisterCallback("EnterInstance", "TargetedSpells_EnterInstance")
         Cell.UnregisterCallback("LeaveInstance", "TargetedSpells_LeaveInstance")

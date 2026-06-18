@@ -302,6 +302,11 @@ local function HandleIndicators(b)
         if type(t["showAnimation"]) == "boolean" then
             indicator:ShowAnimation(t["showAnimation"])
         end
+        if type(t["showJumpingAnimation"]) == "boolean" then
+            if indicator.ShowJumpingAnimation then
+                indicator:ShowJumpingAnimation(t["showJumpingAnimation"])
+            end
+        end
         -- update duration
         if type(t["showDuration"]) == "boolean" or type(t["showDuration"]) == "number" then
             indicator:ShowDuration(t["showDuration"])
@@ -884,6 +889,13 @@ local function UpdateIndicators(layout, indicatorName, setting, value, value2)
             elseif value == "showAnimation" then
                 F.IterateAllUnitButtons(function(b)
                     b.indicators[indicatorName]:ShowAnimation(value2)
+                    UnitButton_UpdateAuras(b)
+                end, true)
+            elseif value == "showJumpingAnimation" then
+                F.IterateAllUnitButtons(function(b)
+                    if b.indicators[indicatorName].ShowJumpingAnimation then
+                        b.indicators[indicatorName]:ShowJumpingAnimation(value2)
+                    end
                     UnitButton_UpdateAuras(b)
                 end, true)
             elseif value == "trackByName" then
@@ -2655,7 +2667,8 @@ end
 -------------------------------------------------
 local function UnitButton_RegisterEvents(self)
     -- self:RegisterEvent("PLAYER_ENTERING_WORLD")
-    self:RegisterEvent("GROUP_ROSTER_UPDATE")
+    -- self:RegisterEvent("GROUP_ROSTER_UPDATE")
+    Cell_RegisterForGroupRosterProxy(self)
 
     self:RegisterEvent("UNIT_HEALTH")
     self:RegisterEvent("UNIT_MAXHEALTH")
@@ -2731,10 +2744,11 @@ end
 
 local function UnitButton_UnregisterEvents(self)
     self:UnregisterAllEvents()
+    Cell_UnregisterFromGroupRosterProxy(self)
 end
 
 local function UnitButton_OnEvent(self, event, unit, arg)
-    if unit and (self.states.displayedUnit == unit or self.states.unit == unit) then
+    if type(unit) == "string" and (self.states.displayedUnit == unit or self.states.unit == unit) then
         if  event == "UNIT_ENTERED_VEHICLE" or event == "UNIT_EXITED_VEHICLE" or event == "UNIT_CONNECTION" then
             self._updateRequired = 1
             self._powerUpdateRequired = 1
@@ -2790,6 +2804,7 @@ local function UnitButton_OnEvent(self, event, unit, arg)
 
         elseif event == "UNIT_AURA" then
             UnitButton_UpdateAuras(self, arg)
+            UnitButton_UpdateShieldAbsorbs(self)
 
         -- elseif event == "UNIT_IN_RANGE_UPDATE" then
         --     UnitButton_UpdateInRange(self, arg)
@@ -3091,11 +3106,11 @@ function B.SetPowerSize(button, size)
 end
 
 function B.UpdateShields(button)
-    predictionEnabled = CellDB["appearance"]["healPrediction"][1]
+    predictionEnabled = false -- Forced off per user request
     shieldEnabled = CellDB["appearance"]["shield"][1]
     overshieldEnabled = CellDB["appearance"]["overshield"][1]
     overshieldReverseFillEnabled = shieldEnabled and CellDB["appearance"]["overshieldReverseFill"]
-    absorbEnabled = CellDB["appearance"]["healAbsorb"][1]
+    absorbEnabled = false -- Forced off per user request
     absorbInvertColor = CellDB["appearance"]["healAbsorbInvertColor"]
 
     button.widgets.shieldBar:SetVertexColor(unpack(CellDB["appearance"]["shield"][2]))

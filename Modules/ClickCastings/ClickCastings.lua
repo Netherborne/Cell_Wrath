@@ -279,7 +279,12 @@ if Cell.isRetail then
         --! NOTE: if another frame shows in front of b, _onleave will NOT trigger. Use WrapScript to solve this issue.
         b:SetAttribute("_onleave", [[
             -- print("_onleave")
-            self:ClearBindings()
+            -- Only clear when cursor left the button area. Child indicator frames (debuff icons
+            -- with EnableMouse=true) fire OnLeave on the parent even while the cursor is still
+            -- geometrically inside the button bounds. IsUnderMouse() is a geometric check.
+            if not self:IsUnderMouse() then
+                self:ClearBindings()
+            end
         ]])
 
         -- wrapFrame:WrapScript(b, "OnLeave", [[
@@ -292,12 +297,11 @@ if Cell.isRetail then
         ]])
     end
 else
-    SetBindingClicks = function(b)
+    SetBindingClicks = function(b, snippet)
         b:SetAttribute("_onenter", [[
             -- print("_onenter")
             self:ClearBindings()
-            -- WotLK Fix: :Run() doesn't exist in WotLK's restricted execution
-            -- self:Run(self:GetAttribute("snippet"))
+            ]] .. (snippet or "") .. [[
 
             -- self:SetBindingClick(true, "SHIFT-MOUSEWHEELUP", self, "shiftSCROLLUP")
             -- FIXME: --! 如果游戏按键设置（比如“视角”“载具控制”）中绑定了滚轮，那么 self:SetBindingClick(true, "MOUSEWHEELUP", self, "SCROLLUP") 会失效
@@ -337,7 +341,7 @@ else
                 if PlayerInCombat() then
                     self:SetAttribute(menuKey, nil)
                 else
-                    self:SetAttribute(menuKey, "togglemenu")
+                    self:SetAttribute(menuKey, "menu")
                 end
             end
         ]])
@@ -362,7 +366,12 @@ else
         --! NOTE: if another frame shows in front of b, _onleave will NOT trigger. Use WrapScript to solve this issue.
         b:SetAttribute("_onleave", [[
             -- print("_onleave")
-            self:ClearBindings()
+            -- Only clear when cursor left the button area. Child indicator frames (debuff icons
+            -- with EnableMouse=true) fire OnLeave on the parent even while the cursor is still
+            -- geometrically inside the button bounds. IsUnderMouse() is a geometric check.
+            if not self:IsUnderMouse() then
+                self:ClearBindings()
+            end
         ]])
 
         -- wrapFrame:WrapScript(b, "OnLeave", [[
@@ -507,14 +516,8 @@ local function ApplyClickCastings(b)
 
         if t[2] == "togglemenu_nocombat" then
             b:SetAttribute("menu", bindKey)
-        ------------------------------------------------------------------
-        --* 已修复：实际上载具（宠物按钮）无法选中的原因是没有 SetAttribute("toggleForVehicle", false)
-        -- elseif Cell.isCata and t[2] == "target" then
-        --     b:SetAttribute(bindKey, "macro")
-        --     local attr = string.gsub(bindKey, "type", "macrotext")
-        --     b:SetAttribute(attr, "/tar [@cell]")
-        --     UpdatePlaceholder(b, attr)
-        ------------------------------------------------------------------
+        elseif t[2] == "togglemenu" then
+            b:SetAttribute(bindKey, "menu")
         else
             b:SetAttribute(bindKey, t[2])
         end
@@ -593,19 +596,133 @@ local function ApplyClickCastings(b)
             b:SetAttribute(bindKey, "macro")
             local attr = string.gsub(bindKey, "type", "macrotext")
             b:SetAttribute(attr, t[3])
-        else
+        elseif t[2] ~= "togglemenu_nocombat" and t[2] ~= "togglemenu" then
             local attr = string.gsub(bindKey, "type", t[2])
             b:SetAttribute(attr, t[3])
         end
     end
 end
 
+local function GetPostClickModifier()
+    local modifier = ""
+
+    if IsAltKeyDown() then
+        modifier = modifier .. "alt-"
+    end
+    if IsControlKeyDown() then
+        modifier = modifier .. "ctrl-"
+    end
+    if IsShiftKeyDown() then
+        modifier = modifier .. "shift-"
+    end
+
+    return modifier
+end
+
+local function GetPostClickBindKey(button, modifier)
+    if not button then return end
+
+    modifier = modifier or GetPostClickModifier()
+
+    if button == "LeftButton" then
+        return modifier.."type1"
+    elseif button == "RightButton" then
+        return modifier.."type2"
+    elseif button == "MiddleButton" then
+        return modifier.."type3"
+    end
+
+    local mouseButton = strmatch(button, "^Button(%d+)$")
+    if mouseButton then
+        return modifier.."type"..mouseButton
+    end
+
+    return "type-"..button
+end
+
+local CellDropdown = CreateFrame("Frame", "CellUnitDropdown", UIParent, "UIDropDownMenuTemplate")
+local function CellDropdown_Initialize(self, level)
+    local unit = self.unit
+    if not unit then return end
+    local menuType
+    if UnitIsUnit(unit, "player") then
+        menuType = "SELF"
+    elseif UnitIsUnit(unit, "vehicle") then
+        menuType = "VEHICLE"
+    elseif UnitIsUnit(unit, "pet") then
+        menuType = "PET"
+    elseif UnitIsPlayer(unit) then
+        if UnitInRaid(unit) then
+            menuType = "RAID_PLAYER"
+        elseif UnitInParty(unit) then
+            menuType = "PARTY"
+        else
+            menuType = "PLAYER"
+        end
+    else
+        menuType = "TARGET"
+    end
+    if menuType then
+        if UnitPopupMenus and UnitPopupMenus[menuType] then
+            for i = #UnitPopupMenus[menuType], 1, -1 do
+                if UnitPopupMenus[menuType][i] == "SET_FOCUS" or UnitPopupMenus[menuType][i] == "CLEAR_FOCUS" then
+                    table.remove(UnitPopupMenus[menuType], i)
+                end
+            end
+        end
+        UnitPopup_ShowMenu(self, menuType, unit, nil, nil)
+    end
+end
+
+local function ShowUnitMenu(button)
+    if InCombatLockdown() then return end
+    local unit = button:GetAttribute("unit")
+    if not unit or not UnitExists(unit) then return end
+
+    CellDropdown.unit = unit
+    UIDropDownMenu_Initialize(CellDropdown, CellDropdown_Initialize, "MENU")
+    ToggleDropDownMenu(1, nil, CellDropdown, "cursor")
+end
+
+local function IsBoundMenuAction(button, bindKey)
+    if not bindKey then return false end
+
+    if button:GetAttribute(bindKey) == "togglemenu" then
+        return true
+    end
+
+    return button:GetAttribute("menu") == bindKey and not InCombatLockdown()
+end
+
 function F.UpdateClickCastOnFrame(frame, snippet)
     if frame then
+        if not frame._menuPostClickHooked then
+            frame._menuPostClickHooked = true
+            frame.menu = ShowUnitMenu
+            frame:HookScript("PreClick", function(self)
+                self._menuClickModifier = GetPostClickModifier()
+            end)
+
+            frame:HookScript("PostClick", function(self, button)
+                local modifier = self._menuClickModifier or ""
+                self._menuClickModifier = nil
+
+                local modifiedMouse = modifier ~= ""
+                if not modifiedMouse and (button == "LeftButton" or button == "RightButton" or button == "MiddleButton" or strmatch(button, "^Button%d+$")) then
+                    return
+                end
+
+                local bindKey = GetPostClickBindKey(button, modifier)
+                if IsBoundMenuAction(self, bindKey) then
+                    ShowUnitMenu(self)
+                end
+            end)
+        end
+
         ClearClickCastings(frame)
         -- update bindingClicks
         frame:SetAttribute("snippet", snippet)
-        SetBindingClicks(frame)
+        SetBindingClicks(frame, snippet)
         -- load db and set attribute
         ApplyClickCastings(frame)
     end
