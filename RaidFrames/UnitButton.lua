@@ -199,8 +199,24 @@ local function HandleIndicators(b)
         I.CreateDebuffs(b)
     end
 
-    -- NOTE: Remove old
-    I.RemoveAllCustomIndicators(b)
+    -- NOTE: Remove old or mismatched custom indicators
+    local validCustomIndicators = {}
+    for _, t in next, b._config do
+        if string.find(t["indicatorName"], "^indicator") then
+            validCustomIndicators[t["indicatorName"]] = t["type"]
+        end
+    end
+
+    for indicatorName, indicator in pairs(b.indicators) do
+        if string.find(indicatorName, "^indicator") then
+            if validCustomIndicators[indicatorName] ~= (indicator.configs and indicator.configs["type"]) then
+                indicator:ClearAllPoints()
+                indicator:Hide()
+                indicator:SetParent(nil)
+                b.indicators[indicatorName] = nil
+            end
+        end
+    end
 
     for _, t in next, b._config do
         local indicator = b.indicators[t["indicatorName"]] or I.CreateIndicator(b, t)

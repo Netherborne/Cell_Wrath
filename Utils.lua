@@ -1917,7 +1917,10 @@ else
     function F.GetSpellInfo(spellId)
         if not spellId then return end
         local rank
-        spellId, rank = strsplit(":", spellId)
+        if type(spellId) == "string" then
+            spellId, rank = strsplit(":", spellId)
+            spellId = tonumber(spellId) or spellId
+        end
         local name, _, icon = GetSpellInfo(spellId)
         return name, icon, tonumber(rank)
     end
@@ -2333,15 +2336,9 @@ local harmItems = {
 --     end
 -- end
 
-local UnitInSpellRange
-if C_Spell and C_Spell.IsSpellInRange then
-    UnitInSpellRange = function(spellName, unit)
-        return IsSpellInRange(spellName, unit)
-    end
-else
-    UnitInSpellRange = function(spellName, unit)
-        return IsSpellInRange(spellName, unit) == 1
-    end
+local UnitInSpellRange = function(spellName, unit)
+    local inRange = IsSpellInRange(spellName, unit)
+    return inRange == 1 or inRange == true
 end
 
 local rc = CreateFrame("Frame")
@@ -2406,16 +2403,27 @@ function F.IsInRange(unit, check)
     elseif not check and F.UnitInGroup(unit) then
         -- NOTE: UnitInRange only works with group players/pets
         --! but not available for PLAYER PET when SOLO
+        if not (UnitIsConnected(unit) and UnitInSamePhase(unit)) then
+            return false
+        end
+
+        if UnitIsDead(unit) then
+            if spell_dead then
+                return UnitInSpellRange(spell_dead, unit)
+            end
+        elseif spell_friend then
+            return UnitInSpellRange(spell_friend, unit)
+        end
+
+        if Cell.isWrath or Cell.isVanilla then
+            return CheckInteractDistance(unit, 4) == 1 or CheckInteractDistance(unit, 4) == true
+        end
+
         local inRange, checked = UnitInRange(unit)
         if not checked then
             return F.IsInRange(unit, true)
         end
-        if inRange then return true end
-        -- verify with spell_friend before concluding out of range
-        if spell_friend then
-            return UnitInSpellRange(spell_friend, unit)
-        end
-        return inRange
+        return inRange == 1 or inRange == true
 
     else
         if UnitCanAssist("player", unit) then -- or UnitCanCooperate("player", unit)
@@ -2431,14 +2439,17 @@ function F.IsInRange(unit, check)
                 return UnitInSpellRange(spell_friend, unit)
             end
 
-            local inRange, checked = UnitInRange(unit)
-            if checked then
-                return inRange
+            if UnitIsUnit(unit, "pet") and spell_pet then
+                return UnitInSpellRange(spell_pet, unit)
             end
 
-            if UnitIsUnit(unit, "pet") and spell_pet then
-                -- no spell_friend, use spell_pet
-                return UnitInSpellRange(spell_pet, unit)
+            if Cell.isWrath or Cell.isVanilla then
+                return CheckInteractDistance(unit, 4) == 1 or CheckInteractDistance(unit, 4) == true
+            end
+
+            local inRange, checked = UnitInRange(unit)
+            if checked then
+                return inRange == 1 or inRange == true
             end
 
         elseif UnitCanAttack("player", unit) then
@@ -2447,7 +2458,7 @@ function F.IsInRange(unit, check)
             elseif spell_harm then
                 return UnitInSpellRange(spell_harm, unit)
             end
-            return IsItemInRange(harmItems[playerClass], unit)
+            return IsItemInRange(harmItems[playerClass], unit) == 1 or IsItemInRange(harmItems[playerClass], unit) == true
         end
 
         return CheckInteractDistance(unit, 4) -- 28 yards
