@@ -143,6 +143,7 @@ local function GetAnchoredPartyButtons(layout)
     for index, button in ipairs(manualButtons) do
         local unit = button:GetAttribute("unit")
         --! WotLK 3.3.5a: Always anchor all 5 buttons to allow RegisterUnitWatch to show them in-combat without gaps
+        --! We sort them so existing units come first, pushing empty slots to the end to prevent visual gaps.
         local include = true
 
         if include and not (layout["main"]["hideSelf"] and unit == "player") then
@@ -150,18 +151,29 @@ local function GetAnchoredPartyButtons(layout)
                 button = button,
                 role = GetPartyButtonRole(button),
                 index = index,
+                exists = (unit and UnitExists(unit)) and 1 or 0,
             })
         end
     end
 
     if layout["main"]["sortByRole"] then
         table.sort(orderedButtons, function(left, right)
+            if left.exists ~= right.exists then
+                return left.exists > right.exists
+            end
             local leftIndex = roleIndex[left.role] or roleIndex["NONE"]
             local rightIndex = roleIndex[right.role] or roleIndex["NONE"]
             if leftIndex == rightIndex then
                 return left.index < right.index
             end
             return leftIndex < rightIndex
+        end)
+    else
+        table.sort(orderedButtons, function(left, right)
+            if left.exists ~= right.exists then
+                return left.exists > right.exists
+            end
+            return left.index < right.index
         end)
     end
 
