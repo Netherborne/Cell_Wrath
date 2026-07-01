@@ -1408,11 +1408,11 @@ if not C_TooltipInfo then
 end
 
 -- GameTooltip:SetSpellByID polyfill for WotLK 3.3.5a
+-- NOTE: Only applied when the native implementation does not exist.
 do
     local tooltip = CreateFrame("GameTooltip")
     local mt = getmetatable(tooltip)
-    if mt and mt.__index then
-        -- FORCE overwrite to ensure we control it
+    if mt and mt.__index and not mt.__index.SetSpellByID then
         mt.__index.SetSpellByID = function(self, spellID)
             if not spellID then return end
             -- Try to get link
@@ -1420,9 +1420,8 @@ do
             if link then
                 self:SetHyperlink(link)
             else
-                -- Fallback to SetSpell if link usually fails (though link is better)
-                -- Or just clear if no link
-                self:ClearLines()
+                -- Do NOT call ClearLines() as fallback - that would wipe the tooltip for
+                -- any spell ID not found via GetSpellLink
             end
         end
     end
